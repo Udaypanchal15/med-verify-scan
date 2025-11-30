@@ -232,9 +232,9 @@ export const UserMedicineDatabase = () => {
                   />
                 </div>
                 <Select
-                  value={selectedCategory}
+                  value={selectedCategory || "all"}
                   onValueChange={(value) => {
-                    setSelectedCategory(value);
+                    setSelectedCategory(value === "all" ? "" : value);
                     setCurrentPage(1);
                   }}
                 >
@@ -242,7 +242,7 @@ export const UserMedicineDatabase = () => {
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Categories</SelectItem>
+                    <SelectItem value="all">All Categories</SelectItem>
                     {medicineCategories.map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}
