@@ -1,0 +1,7 @@
+id,name,price(₹),Is_discontinued,manufacturer_name,type,pack_size_label,short_composition1,short_composition2
+1,Augmentin 625 Duo Tablet,223.42,FALSE,Glaxo SmithKline Pharmaceuticals Ltd,tablet,strip of 10 tablets,Amoxycillin (500mg),Clavulanic Acid (125mg)
+2,Dolo 650 Tablet,30.00,FALSE,Micro Labs Ltd,tablet,strip of 15 tablets,Paracetamol (650mg),
+3,Azithral 500 Tablet,120.00,FALSE,Alembic Pharmaceuticals Ltd,tablet,strip of 5 tablets,Azithromycin (500mg),
+4,ORS Powder 21g,18.00,FALSE,FDC Limited,powder,sachet of 21g,Oral Rehydration Salts,
+5,Ascoril LS Syrup 100ml,115.00,FALSE,Glenmark Pharmaceuticals Ltd,syrup,bottle of 100 ml,Levosalbutamol/Ambroxol/Guaiphenesin,
+
