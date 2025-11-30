@@ -447,6 +447,32 @@ def get_all_seller_medicines(current_user, user_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@admin_bp.route('/medicines/all', methods=['GET', 'OPTIONS'])
+@admin_required
+def get_all_medicines(current_user, user_id):
+    """Get all medicines from all sellers with seller information"""
+    try:
+        query = """
+            SELECT
+                m.*,
+                s.company_name as seller_name,
+                s.license_number as seller_license
+            FROM medicines m
+            LEFT JOIN sellers s ON m.seller_id = s.id
+            ORDER BY m.created_at DESC
+        """
+        results = execute_query(query, fetch_all=True)
+        medicines = [dict(r) for r in results] if results else []
+
+        return jsonify({
+            "message": "All medicines retrieved successfully",
+            "data": medicines,
+            "count": len(medicines)
+        }), 200, {'Content-Type': 'application/json'}
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
+
 def log_audit_event(user_id: str, action: str, resource_type: str, resource_id: str, details: dict):
     """Log admin action to audit log"""
     try:

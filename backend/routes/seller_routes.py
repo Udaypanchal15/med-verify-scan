@@ -236,17 +236,17 @@ def get_seller_status(current_user, user_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@seller_bp.route('/generate-keys', methods=['POST'])
+@seller_bp.route('/generate-keys', methods=['POST', 'OPTIONS'])
 @seller_required
 def generate_keys(current_user, user_id):
     """Generate ECDSA key pair for seller"""
     try:
         seller = Seller.get_by_user_id(user_id)
         if not seller:
-            return jsonify({"error": "Seller not found"}), 404
-        
+            return jsonify({"error": "Seller not found"}), 404, {'Content-Type': 'application/json'}
+
         if seller.get('status') != 'approved':
-            return jsonify({"error": "Seller must be approved before generating keys"}), 403
+            return jsonify({"error": "Seller must be approved before generating keys"}), 403, {'Content-Type': 'application/json'}
         
         # Generate key pair
         keys_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'keys')
@@ -257,17 +257,17 @@ def generate_keys(current_user, user_id):
         public_key_path = os.path.join(keys_dir, f'seller_{seller_id}_public_key.pem')
         
         success = generate_key_pair_files(private_key_path, public_key_path)
-        
+
         if not success:
-            return jsonify({"error": "Failed to generate keys"}), 500
-        
+            return jsonify({"error": "Failed to generate keys"}), 500, {'Content-Type': 'application/json'}
+
         # Read public key
         with open(public_key_path, 'r') as f:
             public_key_pem = f.read()
-        
+
         # Update seller with public key
         Seller.update_public_key(seller_id, public_key_pem)
-        
+
         return jsonify({
             "message": "Keys generated successfully",
             "data": {
@@ -276,10 +276,10 @@ def generate_keys(current_user, user_id):
                 "private_key_path": private_key_path,
                 "warning": "Keep private key secure and never share it"
             }
-        }), 200
-    
+        }), 200, {'Content-Type': 'application/json'}
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
 @seller_bp.route('/medicine', methods=['POST'])
 @seller_required
@@ -396,7 +396,7 @@ def get_medicine(current_user, user_id, medicine_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@seller_bp.route('/medicine/<medicine_id>', methods=['PUT'])
+@seller_bp.route('/medicine/<medicine_id>', methods=['PUT', 'OPTIONS'])
 @seller_required
 def update_medicine(current_user, user_id, medicine_id):
     """Update medicine"""
@@ -426,34 +426,34 @@ def update_medicine(current_user, user_id, medicine_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
-@seller_bp.route('/issue-qr', methods=['POST'])
+@seller_bp.route('/issue-qr', methods=['POST', 'OPTIONS'])
 @seller_required
 def issue_qr(current_user, user_id):
     """Issue signed QR code for medicine with optional batch details"""
     try:
         seller = Seller.get_by_user_id(user_id)
         if not seller or seller.get('status') != 'approved':
-            return jsonify({"error": "Seller not approved"}), 403
+            return jsonify({"error": "Seller not approved"}), 403, {'Content-Type': 'application/json'}
         
         seller_id = str(seller['id'])
         data = request.get_json()
         medicine_id = data.get('medicine_id')
         batch_details = data.get('batch_details', '')  # Optional batch/box details
-        
+
         if not medicine_id:
-            return jsonify({"error": "Medicine ID is required"}), 400
-        
+            return jsonify({"error": "Medicine ID is required"}), 400, {'Content-Type': 'application/json'}
+
         # Verify medicine belongs to seller
         medicine = Medicine.get_by_id(medicine_id)
         if not medicine or str(medicine['seller_id']) != seller_id:
-            return jsonify({"error": "Medicine not found or unauthorized"}), 404
-        
+            return jsonify({"error": "Medicine not found or unauthorized"}), 404, {'Content-Type': 'application/json'}
+
         # Get seller's private key path
         keys_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'keys')
         private_key_path = os.path.join(keys_dir, f'seller_{seller_id}_private_key.pem')
-        
+
         if not os.path.exists(private_key_path):
-            return jsonify({"error": "Private key not found. Please generate keys first."}), 400
+            return jsonify({"error": "Private key not found. Please generate keys first."}), 400, {'Content-Type': 'application/json'}
         
         # Create QR code service with seller's private key
         qr_service = QRCodeService(seller_private_key_path=private_key_path)
@@ -476,14 +476,14 @@ def issue_qr(current_user, user_id):
             issued_by=user_id,
             additional_data=qr_payload
         )
-        
+
         return jsonify({
             "message": "QR code issued successfully",
             "data": qr_code
-        }), 201
-    
+        }), 201, {'Content-Type': 'application/json'}
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
 @seller_bp.route('/history', methods=['GET'])
 @seller_required

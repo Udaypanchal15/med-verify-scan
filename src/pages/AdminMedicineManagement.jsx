@@ -4,43 +4,43 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Navigation } from '@/components/Navigation';
 import { getAuthHeader } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Package, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Package, AlertCircle, Building2, CheckCircle2 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 export default function AdminMedicineManagement() {
-  const [sellers, setSellers] = useState([]);
-  const [expandedSeller, setExpandedSeller] = useState(null);
+  const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
   const { toast } = useToast();
 
   useEffect(() => {
-    loadSellerMedicines();
+    loadAllMedicines();
   }, []);
 
-  const loadSellerMedicines = async () => {
+  const loadAllMedicines = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/sellers/medicines`, {
+      const response = await fetch(`${API_BASE_URL}/admin/medicines/all`, {
         headers: getAuthHeader(),
       });
 
       if (response.ok) {
         const data = await response.json();
-        setSellers(data.data || []);
-      } else if (response.status === 404) {
-        // Endpoint might not exist yet, fetch sellers and their medicines separately
-        await loadSellersMedicinesSeparately();
+        setMedicines(data.data || []);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to load medicines",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to load seller medicines",
+        description: error.message,
         variant: "destructive",
       });
     } finally {
@@ -48,82 +48,47 @@ export default function AdminMedicineManagement() {
     }
   };
 
-  const loadSellersMedicinesSeparately = async () => {
-    try {
-      const sellersResponse = await fetch(`${API_BASE_URL}/admin/sellers`, {
-        headers: getAuthHeader(),
-      });
-
-      if (sellersResponse.ok) {
-        const sellersData = await sellersResponse.json();
-        const sellersWithMedicines = await Promise.all(
-          (sellersData.data || []).map(async (seller) => {
-            try {
-              // Get medicines for this seller (would need a seller-specific endpoint)
-              return {
-                ...seller,
-                medicines: [],
-              };
-            } catch (error) {
-              return { ...seller, medicines: [] };
-            }
-          })
-        );
-        setSellers(sellersWithMedicines);
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load sellers",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+  const getStockBadge = (quantity) => {
+    if (quantity === 0) return { label: 'Out of Stock', className: 'bg-red-100 text-red-800' };
+    if (quantity < 10) return { label: `Low Stock (${quantity})`, className: 'bg-amber-100 text-amber-800' };
+    return { label: `In Stock (${quantity})`, className: 'bg-green-100 text-green-800' };
   };
 
-  const toggleSellerExpand = (sellerId) => {
-    setExpandedSeller(expandedSeller === sellerId ? null : sellerId);
-  };
-
-  const getStockColor = (quantity) => {
-    if (quantity === 0) return 'text-red-600 bg-red-50';
-    if (quantity < 10) return 'text-amber-600 bg-amber-50';
-    return 'text-green-600 bg-green-50';
-  };
-
-  const getDeliveryColor = (status) => {
-    switch (status) {
-      case 'delivered':
-        return 'bg-green-100 text-green-800';
-      case 'in_stock':
-        return 'bg-blue-100 text-blue-800';
-      case 'pending':
-        return 'bg-amber-100 text-amber-800';
-      case 'discontinued':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getSellerStatus = (status) => {
+  const getDeliveryStatusBadge = (status) => {
     const statusMap = {
-      pending: 'bg-amber-100 text-amber-800',
-      viewed: 'bg-blue-100 text-blue-800',
-      verifying: 'bg-purple-100 text-purple-800',
-      approved: 'bg-green-100 text-green-800',
-      rejected: 'bg-red-100 text-red-800',
-      changes_required: 'bg-orange-100 text-orange-800',
+      in_stock: { label: 'In Stock', className: 'bg-blue-100 text-blue-800' },
+      in_transit: { label: 'In Transit', className: 'bg-purple-100 text-purple-800' },
+      delivered: { label: 'Delivered', className: 'bg-green-100 text-green-800' },
+      out_of_stock: { label: 'Out of Stock', className: 'bg-red-100 text-red-800' },
     };
-    return statusMap[status] || 'bg-gray-100 text-gray-800';
+    return statusMap[status] || { label: status, className: 'bg-gray-100 text-gray-800' };
   };
 
-  // Filter sellers based on search
-  const filteredSellers = sellers.filter(seller =>
-    seller.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    seller.license_number?.toLowerCase().includes(searchQuery.toLowerCase())
+  const getApprovalStatusBadge = (status) => {
+    const statusMap = {
+      pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' },
+      approved: { label: 'Approved', className: 'bg-green-100 text-green-800' },
+      rejected: { label: 'Rejected', className: 'bg-red-100 text-red-800' },
+    };
+    return statusMap[status] || { label: status, className: 'bg-gray-100 text-gray-800' };
+  };
+
+  // Filter medicines based on search query
+  const filteredMedicines = medicines.filter(medicine =>
+    medicine.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    medicine.batch_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    medicine.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    medicine.manufacturer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    medicine.seller_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Calculate statistics
+  const stats = {
+    total: medicines.length,
+    approved: medicines.filter(m => m.approval_status === 'approved').length,
+    pending: medicines.filter(m => m.approval_status === 'pending').length,
+    inStock: medicines.filter(m => m.stock_quantity > 0).length,
+  };
 
   if (loading) {
     return (
@@ -142,162 +107,185 @@ export default function AdminMedicineManagement() {
       <main className="container mx-auto py-8 px-4">
         {/* Header */}
         <div className="mb-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Medicine Database</h1>
-            <p className="text-muted-foreground mt-2">View medicines from all approved sellers</p>
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight">Medicine Database</h1>
+          <p className="text-muted-foreground mt-2">Browse and search all medicines from verified sellers</p>
         </div>
 
         {/* Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm">Approved Sellers</p>
-                  <p className="text-2xl font-bold">
-                    {sellers.filter(s => s.status === 'approved').length}
-                  </p>
-                </div>
-                <Package className="h-8 w-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-muted-foreground text-sm">Total Sellers</p>
-                  <p className="text-2xl font-bold">{sellers.length}</p>
-                </div>
-                <Package className="h-8 w-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-muted-foreground text-sm">Total Medicines</p>
-                  <p className="text-2xl font-bold">
-                    {sellers.reduce((acc, seller) => acc + (seller.medicines?.length || 0), 0)}
-                  </p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
                 </div>
-                <Package className="h-8 w-8 text-purple-600" />
+                <Package className="h-8 w-8 text-blue-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground text-sm">Approved</p>
+                  <p className="text-2xl font-bold">{stats.approved}</p>
+                </div>
+                <CheckCircle2 className="h-8 w-8 text-green-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground text-sm">Pending Approval</p>
+                  <p className="text-2xl font-bold">{stats.pending}</p>
+                </div>
+                <AlertCircle className="h-8 w-8 text-amber-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground text-sm">In Stock</p>
+                  <p className="text-2xl font-bold">{stats.inStock}</p>
+                </div>
+                <Package className="h-8 w-8 text-green-600" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search */}
+        {/* Search Bar */}
         <Card className="mb-6">
           <CardContent className="pt-6">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by company name or license number..."
+                placeholder="Search by medicine name, batch number, category, manufacturer, or seller..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
               />
             </div>
+            {searchQuery && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Found {filteredMedicines.length} medicine{filteredMedicines.length !== 1 ? 's' : ''}
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        {/* Sellers and Their Medicines */}
-        {filteredSellers.length > 0 ? (
-          <div className="space-y-4">
-            {filteredSellers.map((seller) => (
-              <Card key={seller.id}>
-                <div
-                  className="p-6 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => toggleSellerExpand(seller.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <h3 className="text-lg font-semibold">{seller.company_name}</h3>
-                          <p className="text-sm text-muted-foreground">License: {seller.license_number}</p>
-                          <div className="flex gap-2 mt-2">
-                            <Badge className={getSellerStatus(seller.status)}>
-                              {seller.status?.replace('_', ' ').toUpperCase()}
-                            </Badge>
-                            {seller.medicines && seller.medicines.length > 0 && (
-                              <Badge variant="secondary">
-                                {seller.medicines.length} Medicines
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="ml-4">
-                      {expandedSeller === seller.id ? (
-                        <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                </div>
+        {/* Medicine Cards Grid */}
+        {filteredMedicines.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredMedicines.map((medicine) => {
+              const stockBadge = getStockBadge(medicine.stock_quantity || 0);
+              const deliveryBadge = getDeliveryStatusBadge(medicine.delivery_status);
+              const approvalBadge = getApprovalStatusBadge(medicine.approval_status);
 
-                {/* Medicines List - Expanded */}
-                {expandedSeller === seller.id && (
-                  <div className="border-t bg-gray-50 p-6">
-                    {seller.medicines && seller.medicines.length > 0 ? (
-                      <div className="space-y-3">
-                        {seller.medicines.map((medicine) => (
-                          <div
-                            key={medicine.id}
-                            className="bg-white p-4 rounded-lg border border-gray-200"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <h4 className="font-semibold">{medicine.name}</h4>
-                                <p className="text-sm text-muted-foreground">Batch: {medicine.batch_no}</p>
-                                <div className="flex gap-2 mt-2">
-                                  {medicine.strength && <Badge variant="outline">{medicine.strength}</Badge>}
-                                  {medicine.dosage && <Badge variant="outline">{medicine.dosage}</Badge>}
-                                  {medicine.category && <Badge variant="outline">{medicine.category}</Badge>}
-                                </div>
-                              </div>
-                              <div className="text-right space-y-2">
-                                <div className={`p-2 rounded ${getStockColor(medicine.stock_quantity || 0)}`}>
-                                  <p className="text-xs">Stock: {medicine.stock_quantity || 0}</p>
-                                </div>
-                                <Badge className={getDeliveryColor(medicine.delivery_status)}>
-                                  {medicine.delivery_status === 'in_stock' ? 'In Stock' :
-                                   medicine.delivery_status === 'pending' ? 'Pending' :
-                                   medicine.delivery_status === 'delivered' ? 'Delivered' : 'Discontinued'}
-                                </Badge>
-                              </div>
-                            </div>
-                            <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-                              <span>Mfg: {new Date(medicine.mfg_date).toLocaleDateString()}</span>
-                              <span>Exp: {new Date(medicine.expiry_date).toLocaleDateString()}</span>
-                            </div>
-                          </div>
-                        ))}
+              return (
+                <Card key={medicine.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">{medicine.name}</CardTitle>
+                        <CardDescription>Batch: {medicine.batch_no}</CardDescription>
                       </div>
-                    ) : (
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>
-                          No medicines added by this seller yet
-                        </AlertDescription>
-                      </Alert>
+                      <Badge className={approvalBadge.className}>
+                        {approvalBadge.label}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    {/* Seller Information */}
+                    {medicine.seller_name && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Building2 className="h-4 w-4" />
+                        <span>{medicine.seller_name}</span>
+                      </div>
                     )}
-                  </div>
-                )}
-              </Card>
-            ))}
+
+                    {/* Medicine Details */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Strength</p>
+                        <p className="font-medium">{medicine.strength || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Dosage</p>
+                        <p className="font-medium">{medicine.dosage || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Category</p>
+                        <p className="font-medium">{medicine.category || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Manufacturer</p>
+                        <p className="font-medium">{medicine.manufacturer || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Mfg Date</p>
+                        <p className="font-medium">
+                          {medicine.mfg_date ? new Date(medicine.mfg_date).toLocaleDateString() : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Expiry Date</p>
+                        <p className="font-medium">
+                          {medicine.expiry_date ? new Date(medicine.expiry_date).toLocaleDateString() : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Badges */}
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge className={stockBadge.className}>
+                        {stockBadge.label}
+                      </Badge>
+                      <Badge className={deliveryBadge.className}>
+                        {deliveryBadge.label}
+                      </Badge>
+                    </div>
+
+                    {/* Description */}
+                    {medicine.description && (
+                      <div className="text-sm">
+                        <p className="text-muted-foreground mb-1">Description</p>
+                        <p className="text-sm line-clamp-2">{medicine.description}</p>
+                      </div>
+                    )}
+
+                    {/* Usage */}
+                    {medicine.usage && (
+                      <div className="text-sm">
+                        <p className="text-muted-foreground mb-1">Usage</p>
+                        <p className="text-sm line-clamp-2">{medicine.usage}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {searchQuery ? "No sellers found matching your search" : "No sellers registered yet"}
+              {searchQuery
+                ? "No medicines found matching your search"
+                : "No medicines in the database yet"}
             </AlertDescription>
           </Alert>
         )}

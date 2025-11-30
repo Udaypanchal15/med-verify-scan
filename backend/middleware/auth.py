@@ -67,24 +67,28 @@ def login_required(f: Callable) -> Callable:
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Skip auth for OPTIONS requests (CORS preflight)
+        if request.method == 'OPTIONS':
+            return f(*args, **kwargs)
+
         # Verify JWT token
         verify_jwt_in_request()
-        
+
         # Get user identity
         user_id = get_jwt_identity()
         claims = get_jwt()
-        
+
         # Get user from database
         user = User.get_by_id(user_id)
         if not user or not user.get('is_active', True):
             return jsonify({
                 "error": "User not found or inactive"
             }), 401
-        
+
         # Add user to kwargs
         kwargs['current_user'] = user
         kwargs['user_id'] = user_id
-        
+
         return f(*args, **kwargs)
     return decorated_function
 
