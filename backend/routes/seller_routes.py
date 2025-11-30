@@ -472,7 +472,7 @@ def issue_qr(current_user, user_id):
 
         # Create QR code without signature (simplified version)
         print(f"[QR Generation] Calling QRCode.create()...")
-        qr_code = QRCode.create(
+        qr_code_db = QRCode.create(
             medicine_id=medicine_id,
             payload_json=payload,
             signature="",  # No signature for simplified version
@@ -480,18 +480,237 @@ def issue_qr(current_user, user_id):
             issued_by=user_id
         )
 
-        print(f"[QR Generation] QR Code created: {qr_code}")
+        print(f"[QR Generation] QR Code created in DB: {qr_code_db}")
 
-        return jsonify({
-            "message": "QR code generated successfully",
-            "data": qr_code
-        }), 201, {'Content-Type': 'application/json'}
+        # Generate QR code image
+        try:
+            import qrcode
+            from io import BytesIO
+            import base64
+
+            # Create QR code data string
+            qr_data = json.dumps(payload)
+
+            # Generate QR code image
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+
+            # Create image
+            img = qr.make_image(fill_color="black", back_color="white")
+
+            # Convert to base64
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+
+            print(f"[QR Generation] QR image generated successfully")
+
+            return jsonify({
+                "message": "QR code generated successfully",
+                "data": {
+                    "qr_id": str(qr_code_db['id']),
+                    "qr_image": f"data:image/png;base64,{img_str}",
+                    "payload": payload,
+                    "medicine_name": medicine.get('name'),
+                    "batch_no": medicine.get('batch_no')
+                }
+            }), 201, {'Content-Type': 'application/json'}
+
+        except ImportError:
+            # qrcode library not installed, return without image
+            print("[QR Generation] qrcode library not installed, returning without image")
+            return jsonify({
+                "message": "QR code generated successfully (install 'qrcode' library for image generation)",
+                "data": {
+                    "qr_id": str(qr_code_db['id']),
+                    "payload": payload,
+                    "medicine_name": medicine.get('name'),
+                    "batch_no": medicine.get('batch_no')
+                }
+            }), 201, {'Content-Type': 'application/json'}
 
     except Exception as e:
         print(f"[QR Generation ERROR] {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
+
+@seller_bp.route('/qr/<qr_id>/download', methods=['GET'])
+@seller_required
+def download_qr_code(current_user, user_id, qr_id):
+    """Download QR code as PNG image"""
+    try:
+        from flask import send_file
+        from io import BytesIO
+        import qrcode
+        import json
+        
+        # Get QR code from database
+        qr_code = QRCode.get_by_id(qr_id)
+        if not qr_code:
+            return jsonify({"error": "QR code not found"}), 404
+        
+        # Verify seller owns this QR code
+        seller = Seller.get_by_user_id(user_id)
+        medicine = Medicine.get_by_id(qr_code.get('medicine_id'))
+        
+        if str(medicine['seller_id']) != str(seller['id']):
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        # Get payload
+        payload = qr_code.get('payload_json')
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        
+        # Generate QR code image
+        qr_data = json.dumps(payload)
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        
+        # Create image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to bytes
+        img_io = BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        
+        # Return as downloadable file
+        medicine_name = medicine.get('name', 'medicine').replace(' ', '_')
+        batch_no = medicine.get('batch_no', 'batch').replace(' ', '_')
+        filename = f"QR_{medicine_name}_{batch_no}_{qr_id[:8]}.png"
+        
+        return send_file(
+            img_io,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    except ImportError:
+        return jsonify({"error": "qrcode library not installed"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@seller_bp.route('/qr/<qr_id>/download-pdf', methods=['GET'])
+@seller_required
+def download_qr_pdf(current_user, user_id, qr_id):
+    """Download QR code as PDF (for printing)"""
+    try:
+        from flask import send_file
+        from io import BytesIO
+        import qrcode
+        import json
+        
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.units import inch
+        except ImportError:
+            return jsonify({"error": "PDF generation requires reportlab library"}), 500
+        
+        # Get QR code from database
+        qr_code = QRCode.get_by_id(qr_id)
+        if not qr_code:
+            return jsonify({"error": "QR code not found"}), 404
+        
+        # Verify seller owns this QR code
+        seller = Seller.get_by_user_id(user_id)
+        medicine = Medicine.get_by_id(qr_code.get('medicine_id'))
+        
+        if str(medicine['seller_id']) != str(seller['id']):
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        # Get payload
+        payload = qr_code.get('payload_json')
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        
+        # Generate QR code image
+        qr_data = json.dumps(payload)
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        
+        # Create image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to bytes
+        qr_img_io = BytesIO()
+        img.save(qr_img_io, 'PNG')
+        qr_img_io.seek(0)
+        
+        # Create PDF
+        pdf_io = BytesIO()
+        c = canvas.Canvas(pdf_io, pagesize=letter)
+        width, height = letter
+        
+        # Add title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(1*inch, height - 1*inch, "Medicine QR Code")
+        
+        # Add medicine details
+        c.setFont("Helvetica", 10)
+        y_position = height - 1.5*inch
+        c.drawString(1*inch, y_position, f"Medicine: {medicine.get('name')}")
+        y_position -= 0.3*inch
+        c.drawString(1*inch, y_position, f"Batch No: {medicine.get('batch_no')}")
+        y_position -= 0.3*inch
+        c.drawString(1*inch, y_position, f"Company: {seller.get('company_name')}")
+        y_position -= 0.3*inch
+        c.drawString(1*inch, y_position, f"Expiry Date: {medicine.get('expiry_date')}")
+        
+        # Add QR code image to PDF (centered)
+        qr_size = 3*inch
+        x_position = (width - qr_size) / 2
+        y_position -= 0.8*inch
+        
+        # Save QR image temporarily for PDF
+        temp_img = BytesIO()
+        img.save(temp_img, 'PNG')
+        temp_img.seek(0)
+        
+        c.drawImage(temp_img, x_position, y_position - qr_size, width=qr_size, height=qr_size)
+        
+        # Add footer
+        c.setFont("Helvetica", 8)
+        c.drawString(1*inch, 0.5*inch, f"Generated on: {datetime.now(timezone.utc).isoformat()}")
+        c.drawString(1*inch, 0.3*inch, f"QR ID: {qr_id}")
+        
+        c.save()
+        pdf_io.seek(0)
+        
+        # Return as downloadable file
+        medicine_name = medicine.get('name', 'medicine').replace(' ', '_')
+        batch_no = medicine.get('batch_no', 'batch').replace(' ', '_')
+        filename = f"QR_{medicine_name}_{batch_no}_{qr_id[:8]}.pdf"
+        
+        return send_file(
+            pdf_io,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @seller_bp.route('/history', methods=['GET'])
 @seller_required
