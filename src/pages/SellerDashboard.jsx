@@ -265,39 +265,6 @@ export default function SellerDashboard() {
     }
   };
 
-  const handleGenerateKeys = async () => {
-    setGeneratingKeys(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/seller/generate-keys`, {
-        method: 'POST',
-        headers: {
-          ...getAuthHeader(),
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate keys');
-      }
-
-      const data = await response.json();
-      toast({
-        title: "Success",
-        description: "Security keys generated successfully. You can now generate QR codes.",
-      });
-      setHasKeys(true);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setGeneratingKeys(false);
-    }
-  };
-
   const getStatusBadge = (status) => {
     switch (status) {
       case 'pending':
@@ -443,24 +410,6 @@ export default function SellerDashboard() {
                     <Clock className="h-4 w-4 text-amber-600" />
                     <AlertDescription className="text-sm text-amber-700 ml-2">
                       Your application is pending admin verification. You can add medicines once approved.
-                    </AlertDescription>
-                  </Alert>
-                )}
-                {seller.status === 'approved' && !hasKeys && (
-                  <Alert className="md:col-span-2 border-blue-200 bg-blue-50">
-                    <Key className="h-4 w-4 text-blue-600" />
-                    <AlertDescription className="text-sm text-blue-700 ml-2 flex items-center justify-between">
-                      <div>
-                        <strong>Security Keys Required:</strong> Generate your cryptographic keys to enable QR code generation for your medicines.
-                      </div>
-                      <Button
-                        onClick={handleGenerateKeys}
-                        disabled={generatingKeys}
-                        className="ml-4 bg-blue-600 hover:bg-blue-700"
-                        size="sm"
-                      >
-                        {generatingKeys ? 'Generating...' : 'Generate Keys'}
-                      </Button>
                     </AlertDescription>
                   </Alert>
                 )}

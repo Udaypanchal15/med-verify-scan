@@ -17,7 +17,7 @@ def role_required(*allowed_roles: str):
         def decorated_function(*args, **kwargs):
             # Skip auth for OPTIONS requests (CORS preflight)
             if request.method == 'OPTIONS':
-                return f(*args, **kwargs)
+                return jsonify({}), 200
 
             # Verify JWT token
             verify_jwt_in_request()
@@ -69,7 +69,7 @@ def login_required(f: Callable) -> Callable:
     def decorated_function(*args, **kwargs):
         # Skip auth for OPTIONS requests (CORS preflight)
         if request.method == 'OPTIONS':
-            return f(*args, **kwargs)
+            return jsonify({}), 200
 
         # Verify JWT token
         verify_jwt_in_request()

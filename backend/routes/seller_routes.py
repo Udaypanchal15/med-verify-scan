@@ -429,60 +429,68 @@ def update_medicine(current_user, user_id, medicine_id):
 @seller_bp.route('/issue-qr', methods=['POST', 'OPTIONS'])
 @seller_required
 def issue_qr(current_user, user_id):
-    """Issue signed QR code for medicine with optional batch details"""
+    """Issue QR code for medicine with optional batch details"""
     try:
+        print(f"[QR Generation] Starting for user_id: {user_id}")
+
         seller = Seller.get_by_user_id(user_id)
         if not seller or seller.get('status') != 'approved':
             return jsonify({"error": "Seller not approved"}), 403, {'Content-Type': 'application/json'}
-        
+
         seller_id = str(seller['id'])
+        print(f"[QR Generation] Seller ID: {seller_id}")
+
         data = request.get_json()
         medicine_id = data.get('medicine_id')
-        batch_details = data.get('batch_details', '')  # Optional batch/box details
+        batch_details = data.get('batch_details', '')
+
+        print(f"[QR Generation] Medicine ID: {medicine_id}")
 
         if not medicine_id:
             return jsonify({"error": "Medicine ID is required"}), 400, {'Content-Type': 'application/json'}
 
         # Verify medicine belongs to seller
         medicine = Medicine.get_by_id(medicine_id)
+        print(f"[QR Generation] Medicine found: {medicine.get('name') if medicine else 'None'}")
+
         if not medicine or str(medicine['seller_id']) != seller_id:
             return jsonify({"error": "Medicine not found or unauthorized"}), 404, {'Content-Type': 'application/json'}
 
-        # Get seller's private key path
-        keys_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'keys')
-        private_key_path = os.path.join(keys_dir, f'seller_{seller_id}_private_key.pem')
-
-        if not os.path.exists(private_key_path):
-            return jsonify({"error": "Private key not found. Please generate keys first."}), 400, {'Content-Type': 'application/json'}
-        
-        # Create QR code service with seller's private key
-        qr_service = QRCodeService(seller_private_key_path=private_key_path)
-        
-        # Prepare QR data with batch details
-        qr_payload = {
+        # Create payload for QR code
+        payload = {
             "medicine_id": medicine_id,
             "seller_id": seller_id,
-            "issued_by": user_id,
             "medicine_name": medicine.get('name'),
             "batch_no": medicine.get('batch_no'),
-            "batch_details": batch_details,  # Include additional batch/box details
-            "issued_at": datetime.now().isoformat()
+            "batch_details": batch_details,
+            "mfg_date": str(medicine.get('mfg_date')) if medicine.get('mfg_date') else None,
+            "expiry_date": str(medicine.get('expiry_date')) if medicine.get('expiry_date') else None,
+            "issued_at": datetime.now(timezone.utc).isoformat()
         }
-        
-        # Issue QR code
-        qr_code = qr_service.create_signed_qr(
+
+        print(f"[QR Generation] Payload created: {json.dumps(payload, default=str)}")
+
+        # Create QR code without signature (simplified version)
+        print(f"[QR Generation] Calling QRCode.create()...")
+        qr_code = QRCode.create(
             medicine_id=medicine_id,
-            seller_id=seller_id,
-            issued_by=user_id,
-            additional_data=qr_payload
+            payload_json=payload,
+            signature="",  # No signature for simplified version
+            blockchain_tx=None,
+            issued_by=user_id
         )
 
+        print(f"[QR Generation] QR Code created: {qr_code}")
+
         return jsonify({
-            "message": "QR code issued successfully",
+            "message": "QR code generated successfully",
             "data": qr_code
         }), 201, {'Content-Type': 'application/json'}
 
     except Exception as e:
+        print(f"[QR Generation ERROR] {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500, {'Content-Type': 'application/json'}
 
 @seller_bp.route('/history', methods=['GET'])
