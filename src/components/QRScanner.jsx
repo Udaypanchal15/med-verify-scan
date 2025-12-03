@@ -278,7 +278,77 @@ export const QRScanner = () => {
     setIsScanning(true);
 
     try {
-      // Try to scan via API first
+      let qrData;
+      
+      // Try to parse as JSON first (for seller-generated QR codes)
+      try {
+        qrData = JSON.parse(codeToScan);
+        
+        if (qrData.qr_id) {
+          // This is a seller-generated QR code, verify by ID
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/scan/verify-qr/${qrData.qr_id}`,
+            {
+              headers: {
+                'Authorization': localStorage.getItem('token') ? `Bearer ${localStorage.getItem('token')}` : undefined,
+              }
+            }
+          );
+
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to verify QR code');
+          }
+
+          const medicineData = data.data.medicine;
+          const isExpired = checkExpiry(medicineData.expiry_date);
+          
+          const result = {
+            code: qrData.qr_id,
+            name: medicineData.name || "Unknown Medicine",
+            manufacturer: medicineData.manufacturer || "Unknown",
+            batchNumber: medicineData.batch_no || "N/A",
+            mfgDate: medicineData.mfg_date || "N/A",
+            expDate: medicineData.expiry_date || "N/A",
+            category: medicineData.category || "N/A",
+            dosage: medicineData.dosage || "N/A",
+            strength: medicineData.strength || "N/A",
+            description: medicineData.description || "N/A",
+            usage: medicineData.usage || "N/A",
+            isAuthentic: data.data.verified,
+            isExpired: isExpired,
+            status: isExpired ? "expired" : "verified",
+            seller: data.data.seller,
+            aiSummary: data.data.ai_summary
+          };
+
+          setVerificationResult(result);
+
+          // If expired, get alternatives
+          if (isExpired && result.name !== "Unknown Medicine") {
+            const alts = await getAlternatives(result.name, result.category);
+            setAlternatives(alts);
+          } else {
+            setAlternatives([]);
+          }
+
+          toast({
+            title: "Scan Complete",
+            description: isExpired
+              ? `${result.name} has expired. Alternatives suggested below.`
+              : `Medicine verified successfully!`,
+            variant: isExpired ? "destructive" : "default",
+          });
+
+          setIsScanning(false);
+          return;
+        }
+      } catch (e) {
+        // Not JSON, continue with normal flow
+      }
+
+      // Try to scan via API as medicine ID
       const response = await scanQrData(codeToScan);
       
       console.log("API Scan Response:", response);
@@ -370,19 +440,10 @@ export const QRScanner = () => {
                 <QrCode className="h-8 w-8 text-primary" />
               </div>
               <h3 className="text-2xl font-semibold mb-2">Scan Medicine QR Code</h3>
-              <p className="text-muted-foreground">Use camera or enter code manually</p>
+              <p className="text-muted-foreground">Use camera or upload image to verify medicine</p>
             </div>
 
             <div className="space-y-4">
-              <div className="relative">
-                <Input
-                  value={qrCode}
-                  onChange={(e) => setQrCode(e.target.value)}
-                  placeholder="Enter QR code or medicine ID (try: MED001, MED002, MED003)"
-                  className="text-center text-lg py-6"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   variant="outline"
@@ -413,13 +474,11 @@ export const QRScanner = () => {
                 style={{ display: 'none' }}
               />
 
-              <Button
-                onClick={handleScan}
-                disabled={isScanning}
-                className="w-full py-6 text-lg bg-gradient-to-r from-primary to-accent hover:shadow-scanner"
-              >
-                {isScanning ? "Verifying..." : "Verify Medicine"}
-              </Button>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                <p className="text-sm text-blue-900">
+                  📸 Point camera at QR code or upload a screenshot to scan
+                </p>
+              </div>
             </div>
           </Card>
 
@@ -432,7 +491,7 @@ export const QRScanner = () => {
                 <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Info className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <p className="text-muted-foreground">Enter a medicine code and click verify to see results</p>
+                <p className="text-muted-foreground">Scan QR code or upload image to see results</p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -487,6 +546,56 @@ export const QRScanner = () => {
                       </p>
                     </div>
                   </div>
+
+                  {verificationResult.dosage && verificationResult.dosage !== "N/A" && (
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Dosage</label>
+                      <p className="font-medium">{verificationResult.dosage}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.strength && verificationResult.strength !== "N/A" && (
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Strength</label>
+                      <p className="font-medium">{verificationResult.strength}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.category && verificationResult.category !== "N/A" && (
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Category</label>
+                      <p className="font-medium">{verificationResult.category}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.description && verificationResult.description !== "N/A" && (
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Description</label>
+                      <p className="text-sm">{verificationResult.description}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.usage && verificationResult.usage !== "N/A" && (
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Usage</label>
+                      <p className="text-sm">{verificationResult.usage}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.seller && (
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <label className="text-sm font-medium text-blue-900">Seller Information</label>
+                      <p className="font-medium text-blue-900">{verificationResult.seller.company_name}</p>
+                      <p className="text-sm text-blue-700">Status: {verificationResult.seller.status}</p>
+                    </div>
+                  )}
+
+                  {verificationResult.aiSummary && (
+                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <label className="text-sm font-medium text-green-900">AI Summary</label>
+                      <p className="text-sm text-green-800 mt-2">{verificationResult.aiSummary}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Alternative Medicines (shown when expired) */}

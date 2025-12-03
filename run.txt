@@ -1,0 +1,7 @@
+ Backend
+ cd backend
+ python -m venv venv     
+ venv\Scripts\activate 
+
+ frontend 
+ npm run dev

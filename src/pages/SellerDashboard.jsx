@@ -49,6 +49,8 @@ export default function SellerDashboard() {
   });
 
   const [submittingMedicine, setSubmittingMedicine] = useState(false);
+  const [generatedQR, setGeneratedQR] = useState(null);
+  const [downloadingQR, setDownloadingQR] = useState(false);
 
   useEffect(() => {
     const role = getUserRole();
@@ -183,14 +185,13 @@ export default function SellerDashboard() {
 
       const data = await response.json();
       
+      // Store the generated QR data
+      setGeneratedQR(data.data);
+      
       toast({
         title: "Success",
         description: "QR code generated successfully",
       });
-
-      setShowQRModal(false);
-      setQRBatchDetails('');
-      setSelectedMedicine(null);
     } catch (error) {
       toast({
         title: "Error",
@@ -199,6 +200,82 @@ export default function SellerDashboard() {
       });
     } finally {
       setGeneratingQR(false);
+    }
+  };
+
+  const handleDownloadQRPNG = async () => {
+    if (!generatedQR) return;
+
+    setDownloadingQR(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/seller/qr/${generatedQR.qr_id}/download`, {
+        headers: getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download QR code');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `QR_${generatedQR.qr_id}.png`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "QR code downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingQR(false);
+    }
+  };
+
+  const handleDownloadQRPDF = async () => {
+    if (!generatedQR) return;
+
+    setDownloadingQR(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/seller/qr/${generatedQR.qr_id}/download-pdf`, {
+        headers: getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download QR PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `QR_${generatedQR.qr_id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "QR PDF downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingQR(false);
     }
   };
 
@@ -851,36 +928,94 @@ export default function SellerDashboard() {
                 <CardDescription>{selectedMedicine.name} - {selectedMedicine.batch_no}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="batch-details">Batch Details (Optional)</Label>
-                  <Textarea
-                    id="batch-details"
-                    placeholder="Enter additional batch or box details (e.g., Box ID, Serial Number)..."
-                    value={qrBatchDetails}
-                    onChange={(e) => setQRBatchDetails(e.target.value)}
-                    className="h-20"
-                  />
-                </div>
+                {!generatedQR ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="batch-details">Batch Details (Optional)</Label>
+                      <Textarea
+                        id="batch-details"
+                        placeholder="Enter additional batch or box details (e.g., Box ID, Serial Number)..."
+                        value={qrBatchDetails}
+                        onChange={(e) => setQRBatchDetails(e.target.value)}
+                        className="h-20"
+                      />
+                    </div>
 
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleGenerateQR}
-                    className="flex-1"
-                    disabled={generatingQR}
-                  >
-                    {generatingQR ? 'Generating...' : 'Generate QR'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowQRModal(false);
-                      setSelectedMedicine(null);
-                      setQRBatchDetails('');
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleGenerateQR}
+                        className="flex-1"
+                        disabled={generatingQR}
+                      >
+                        {generatingQR ? 'Generating...' : 'Generate QR'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowQRModal(false);
+                          setSelectedMedicine(null);
+                          setQRBatchDetails('');
+                          setGeneratedQR(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-4">
+                      <div className="flex flex-col items-center gap-4 py-6 border rounded-lg bg-muted/30">
+                        <img 
+                          src={generatedQR.qr_image || (generatedQR.payload ? `data:image/png;base64,${generatedQR.payload}` : '')}
+                          alt="Generated QR Code"
+                          className="h-48 w-48 border-4 border-white rounded"
+                        />
+                        <p className="text-sm text-muted-foreground text-center">
+                          QR ID: {generatedQR.qr_id}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <p><strong>Medicine:</strong> {generatedQR.medicine_name}</p>
+                        <p><strong>Batch:</strong> {generatedQR.batch_no}</p>
+                        <p><strong>Expiry:</strong> {new Date(generatedQR.expiry_date).toLocaleDateString()}</p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleDownloadQRPNG}
+                          className="flex-1"
+                          disabled={downloadingQR}
+                          variant="default"
+                        >
+                          {downloadingQR ? 'Downloading...' : 'Download PNG'}
+                        </Button>
+                        <Button
+                          onClick={handleDownloadQRPDF}
+                          className="flex-1"
+                          disabled={downloadingQR}
+                          variant="outline"
+                        >
+                          {downloadingQR ? 'Downloading...' : 'Download PDF'}
+                        </Button>
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setShowQRModal(false);
+                          setSelectedMedicine(null);
+                          setQRBatchDetails('');
+                          setGeneratedQR(null);
+                        }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>

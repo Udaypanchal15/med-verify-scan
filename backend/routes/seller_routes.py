@@ -1,7 +1,7 @@
 """
 Seller routes for KYC, medicine management, and QR code issuance
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from middleware.auth import login_required, seller_required, admin_or_seller_required
 from database.models import Seller, Medicine, QRCode, User
 from services.qr_service import QRCodeService
@@ -14,6 +14,25 @@ import uuid
 import hashlib
 import json
 from datetime import datetime, timezone
+from io import BytesIO
+import base64
+
+# Try importing QR code libraries
+try:
+    import qrcode
+    QRCODE_AVAILABLE = True
+except ImportError:
+    QRCODE_AVAILABLE = False
+    print("[WARNING] qrcode library not installed. QR code image generation will be disabled.")
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    print("[WARNING] reportlab library not installed. PDF generation will be disabled.")
 
 seller_bp = Blueprint('seller_bp', __name__, url_prefix='/seller')
 
@@ -483,33 +502,48 @@ def issue_qr(current_user, user_id):
         print(f"[QR Generation] QR Code created in DB: {qr_code_db}")
 
         # Generate QR code image
+        if not QRCODE_AVAILABLE:
+            print("[QR Generation] qrcode library not available, returning without image")
+            return jsonify({
+                "message": "QR code generated successfully (install 'qrcode' library for image generation)",
+                "data": {
+                    "qr_id": str(qr_code_db['id']),
+                    "payload": payload,
+                    "medicine_name": medicine.get('name'),
+                    "batch_no": medicine.get('batch_no')
+                }
+            }), 201, {'Content-Type': 'application/json'}
+
         try:
-            import qrcode
-            from io import BytesIO
-            import base64
+            print(f"[QR Generation] qrcode module available, generating image...")
 
             # Create QR code data string
             qr_data = json.dumps(payload)
+            print(f"[QR Generation] QR data prepared: {len(qr_data)} bytes")
 
             # Generate QR code image
+            print(f"[QR Generation] Creating QR code object...")
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
             )
+            print(f"[QR Generation] QR object created, adding data...")
             qr.add_data(qr_data)
             qr.make(fit=True)
+            print(f"[QR Generation] QR data processed, creating image...")
 
             # Create image
             img = qr.make_image(fill_color="black", back_color="white")
+            print(f"[QR Generation] Image created, converting to base64...")
 
             # Convert to base64
             buffered = BytesIO()
             img.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
 
-            print(f"[QR Generation] QR image generated successfully")
+            print(f"[QR Generation] QR image generated successfully ({len(img_str)} bytes base64)")
 
             return jsonify({
                 "message": "QR code generated successfully",
@@ -518,20 +552,24 @@ def issue_qr(current_user, user_id):
                     "qr_image": f"data:image/png;base64,{img_str}",
                     "payload": payload,
                     "medicine_name": medicine.get('name'),
-                    "batch_no": medicine.get('batch_no')
+                    "batch_no": medicine.get('batch_no'),
+                    "expiry_date": str(medicine.get('expiry_date')) if medicine.get('expiry_date') else None
                 }
             }), 201, {'Content-Type': 'application/json'}
 
-        except ImportError:
-            # qrcode library not installed, return without image
-            print("[QR Generation] qrcode library not installed, returning without image")
+        except Exception as qr_error:
+            print(f"[QR Generation] Error during image generation: {type(qr_error).__name__}: {str(qr_error)}")
+            import traceback
+            traceback.print_exc()
+            # Still return QR code data without image on error
             return jsonify({
-                "message": "QR code generated successfully (install 'qrcode' library for image generation)",
+                "message": "QR code generated (image generation failed)",
                 "data": {
                     "qr_id": str(qr_code_db['id']),
                     "payload": payload,
                     "medicine_name": medicine.get('name'),
-                    "batch_no": medicine.get('batch_no')
+                    "batch_no": medicine.get('batch_no'),
+                    "image_error": str(qr_error)
                 }
             }), 201, {'Content-Type': 'application/json'}
 
@@ -546,10 +584,8 @@ def issue_qr(current_user, user_id):
 def download_qr_code(current_user, user_id, qr_id):
     """Download QR code as PNG image"""
     try:
-        from flask import send_file
-        from io import BytesIO
-        import qrcode
-        import json
+        if not QRCODE_AVAILABLE:
+            return jsonify({"error": "qrcode library not installed"}), 500
         
         # Get QR code from database
         qr_code = QRCode.get_by_id(qr_id)
@@ -599,8 +635,6 @@ def download_qr_code(current_user, user_id, qr_id):
             download_name=filename
         )
     
-    except ImportError:
-        return jsonify({"error": "qrcode library not installed"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -609,16 +643,10 @@ def download_qr_code(current_user, user_id, qr_id):
 def download_qr_pdf(current_user, user_id, qr_id):
     """Download QR code as PDF (for printing)"""
     try:
-        from flask import send_file
-        from io import BytesIO
-        import qrcode
-        import json
+        if not QRCODE_AVAILABLE:
+            return jsonify({"error": "qrcode library not installed"}), 500
         
-        try:
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.pagesizes import letter
-            from reportlab.lib.units import inch
-        except ImportError:
+        if not PDF_AVAILABLE:
             return jsonify({"error": "PDF generation requires reportlab library"}), 500
         
         # Get QR code from database
